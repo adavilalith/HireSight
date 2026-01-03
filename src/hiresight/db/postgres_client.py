@@ -17,7 +17,7 @@ class PostgresClient:
                     location_searched TEXT NOT NULL,
                         
                     raw_json JSONB NOT NULL,
-                    full_description_html TEXT,
+                    full_description_markdown TEXT,
                         
                     crawled BOOLEAN DEFAULT FALSE,
                     crawl_attempts INTEGER DEFAULT 0,
@@ -47,7 +47,7 @@ class PostgresClient:
 
     def get_pending_jobs(self, limit=10):
         """Fetches jobs that haven't been crawled yet."""
-        query = "SELECT id, raw_json->'apply_options'->0->>'link' FROM jobs_raw WHERE crawled = FALSE LIMIT %s"
+        query = "SELECT id, raw_json->'apply_options' FROM jobs_raw WHERE crawled = FALSE LIMIT %s"
         with self.conn.cursor() as cur:
             cur.execute(query, (limit,))
             return cur.fetchall() # Returns list of (job_id, url)

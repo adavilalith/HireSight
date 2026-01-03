@@ -1,27 +1,43 @@
 import asyncio
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 
 class JobCrawler:
     def __init__(self):
-        # We can add custom headers or browser configs here later
-        pass
+        # BrowserConfig handles global settings like headless mode and window size
+        self.browser_config = BrowserConfig(
+            headless=True, 
+            verbose=True,
+            # Helps bypass basic bot detection
+            user_agent_mode="random" 
+        )
+        
+        # CrawlerRunConfig handles per-page logic like Magic Mode
+        self.run_config = CrawlerRunConfig(
+            magic=True,                 # The "Magic" button for banners/popups
+            remove_overlay_elements=True, # Forcefully strip blocking UI elements
+            cache_mode=CacheMode.BYPASS, # Ensure we get fresh data
+            page_timeout=60000          # 60s timeout for heavy job boards
+        )
 
     async def crawl_job_description(self, url: str) -> str:
-        """Visits a URL and returns clean, markdown-formatted text."""
-        async with AsyncWebCrawler(verbose=True) as crawler:
-            result = await crawler.arun(url=url)
+        """Visits a URL using Magic Mode to bypass popups."""
+        async with AsyncWebCrawler(config=self.browser_config) as crawler:
+            # We pass the run_config here
+            result = await crawler.arun(
+                url=url, 
+                config=self.run_config
+            )
             
             if result.success:
-                # result.markdown is pre-cleaned text perfect for LLMs
-                return result.markdown
+                # 'fit_markdown' is often cleaner than 'markdown' for job ads
+                # as it focuses on the primary content area.
+                return result.markdown.fit_markdown or result.markdown.raw_markdown
             else:
-                print(f"Failed to crawl {url}: {result.error_message}")
+                print(f"❌ Failed to crawl {url}: {result.error_message}")
                 return ""
 
-# Simple test runner for this class
+# Usage
 if __name__ == "__main__":
     crawler = JobCrawler()
-    # Testing with a real URL (using Hyderabad-based job board if possible)
-    sample_url = "https://www.google.com/about/careers/applications/jobs/results/" 
-    description = asyncio.run(crawler.crawl_job_description(sample_url))
-    print(description[:500]) # Print first 500 chars
+    description = asyncio.run(crawler.crawl_job_description("https://example-job-board.com/job/123"))
+    print(description)

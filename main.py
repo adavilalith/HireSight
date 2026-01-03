@@ -10,38 +10,52 @@ load_dotenv()
 
 async def run_pipeline():
     # --- PHASE 1: INGESTION ---
-    # collector = JobCollector()
+    collector = JobCollector()
     db = PostgresClient(os.getenv("POSTGRES_URL"))
     
     role = "Data Analyst"
     location = "Hyderabad, Telangana, India"
     
-    # print(f"🔍 [Phase 1] Collecting jobs for {role} in {location}...")
-    # jobs = collector.fetch_jobs(role=role, location=location, max_pages=1)
+    print(f"🔍 [Phase 1] Collecting jobs for {role} in {location}...")
+    jobs = collector.fetch_jobs(role=role, location=location, max_pages=5)
     
-    # if jobs:
-    #     db.save_jobs(jobs, role, location)
-    #     with open('data.json', 'w') as f:
-    #             json.dump(jobs, f, indent=4)
-    print("\nSKIPPING PHASE 1: INGESTION to save API tokens\n")
+    if jobs:
+        db.save_jobs(jobs, role, location)
+        with open('data.json', 'w') as f:
+                json.dump(jobs, f, indent=4)
+    # print("\nSKIPPING PHASE 1: INGESTION to save API tokens\n")
 
-    # --- PHASE 2: CRAWLING ---
-    print(f"🕷️ [Phase 2] Starting Crawl4AI for pending jobs...")
+    print(f"🕷️ [Phase 2] Multi-source Crawl for Hyderabad jobs...")
     crawler = JobCrawler()
-    
-    # Fetch id and URL for jobs where crawled = FALSE
     pending_jobs = db.get_pending_jobs(limit=5) 
     
-    for id, url in pending_jobs:
-        print(f"📝 Crawling: {url[:50]}...")
-        markdown = await crawler.crawl_job_description(url)
-        
-        if markdown:
-            # Update the DB with the full text and set crawled = TRUE
-            db.update_job_description(id, markdown)
-            print(f"✅ Saved description for {id}")
+    for db_id, apply_options in pending_jobs:
+        successful_crawls = []
+        # apply_options is a list of dicts: [{'title': '...', 'link': '...'}, ...]
+        for option in apply_options:
+            option = option
+            url = option.get('link')
+            source_name = option.get('title', 'Unknown Source')
+            
+            if len(successful_crawls) >= 3:
+                break # Stop if we already have 3 sources
+            print(f"📄 Trying {source_name}: {url[:40]}...")
+            markdown = await crawler.crawl_job_description(url)
+            
+            if markdown and len(markdown) > 200: # Ensure it's not just a 'Cookie' page
+                header = f"--- SOURCE: {source_name} ---\n"
+                successful_crawls.append(header + markdown)
+                print(f"✅ Success from {source_name}")
+            else:
+                print(f"⚠️ Failed or empty crawl for {source_name}. Skipping...")
+
+        if successful_crawls:
+            # Combine all successful results with a separator
+            final_content = "\n\n".join(successful_crawls)
+            db.update_job_description(db_id, final_content)
+            print(f"🏁 Finished job {db_id} using {len(successful_crawls)} sources.")
         else:
-            print(f"⚠️ Skipping {id} due to crawl error.")
+            print(f"❌ Could not crawl any links for job {db_id}.")
 
     db.close()
     print("🚀 Pipeline Finished!")
