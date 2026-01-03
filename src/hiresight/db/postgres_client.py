@@ -1,5 +1,5 @@
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values,Json
 import json
 
 class PostgresClient:
@@ -26,6 +26,39 @@ class PostgresClient:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+
+            # Silver Layer (Structured Analytics Data)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS jobs_parsed (
+                    id SERIAL PRIMARY KEY,
+                    job_raw_id INTEGER REFERENCES jobs_raw(id) ON DELETE CASCADE,
+                    
+                    -- Categorical Fields
+                    role TEXT,
+                    job_type TEXT,
+                    seniority TEXT,
+                    is_remote BOOLEAN,
+                    
+                    -- Numerical/Currency Fields
+                    salary_min INTEGER,
+                    salary_max INTEGER,
+                    salary_currency TEXT,
+                    
+                    -- List/Array Fields (JSONB)
+                    tech_stack JSONB,
+                    soft_skills JSONB,
+                    responsibilities JSONB,
+                    
+                    -- Other metadata
+                    education_required TEXT,
+                    parsed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+                
+                -- Optimization: GIN Index for fast skill searching
+                CREATE INDEX IF NOT EXISTS idx_tech_stack ON jobs_parsed USING GIN (tech_stack);
+                CREATE INDEX IF NOT EXISTS idx_role ON jobs_parsed (role);
+            """)
+
             self.conn.commit()
 
     def save_jobs(self, jobs: list, role: str, location: str):
@@ -63,6 +96,51 @@ class PostgresClient:
         """
         with self.conn.cursor() as cur:
             cur.execute(query, (markdown, id))
+            self.conn.commit()
+
+    def get_unparsed_jobs(self, limit=10):
+        """Fetches markdown that hasn't been processed by the LLM yet."""
+        query = """
+            SELECT id, full_description_markdown 
+            FROM jobs_raw 
+            WHERE crawled = TRUE 
+            AND id NOT IN (SELECT job_raw_id FROM jobs_parsed)
+            LIMIT %s;
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(query, (limit,))
+            return cur.fetchall()
+
+    def save_parsed_job(self, raw_id: int, job_data):
+        """
+        Saves the Pydantic JobExtraction object to the Silver table.
+        Using the Json adapter ensures Pydantic lists -> Postgres JSONB.
+        """
+        query = """
+            INSERT INTO jobs_parsed (
+                job_raw_id, role, job_type, seniority, is_remote, 
+                salary_min, salary_max, salary_currency, 
+                tech_stack, soft_skills, responsibilities, education_required
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """
+        
+        values = (
+            raw_id,
+            job_data.role,
+            job_data.job_type,
+            job_data.seniority,
+            job_data.is_remote,
+            job_data.salary_min,
+            job_data.salary_max,
+            job_data.salary_currency,
+            Json(job_data.tech_stack),      
+            Json(job_data.soft_skills),     
+            Json(job_data.responsibilities),
+            job_data.education_required
+        )
+        
+        with self.conn.cursor() as cur:
+            cur.execute(query, values)
             self.conn.commit()
 
     def close(self):
