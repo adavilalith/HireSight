@@ -33,7 +33,7 @@ class JobCrawler:
                 # as it focuses on the primary content area.
                 return result.markdown.fit_markdown or result.markdown.raw_markdown
             else:
-                print(f"❌ Failed to crawl {url}: {result.error_message}")
+                print(f"Failed to crawl {url}: {result.error_message}")
                 return ""
 
 # Usage

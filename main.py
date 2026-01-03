@@ -16,7 +16,7 @@ async def run_pipeline():
     role = "Data Analyst"
     location = "Hyderabad, Telangana, India"
     
-    print(f"🔍 [Phase 1] Collecting jobs for {role} in {location}...")
+    print(f"[Phase 1] Collecting jobs for {role} in {location}...")
     jobs = collector.fetch_jobs(role=role, location=location, max_pages=5)
     
     if jobs:
@@ -25,7 +25,7 @@ async def run_pipeline():
                 json.dump(jobs, f, indent=4)
     # print("\nSKIPPING PHASE 1: INGESTION to save API tokens\n")
 
-    print(f"🕷️ [Phase 2] Multi-source Crawl for Hyderabad jobs...")
+    print(f"[Phase 2] Multi-source Crawl for Hyderabad jobs...")
     crawler = JobCrawler()
     pending_jobs = db.get_pending_jobs(limit=5) 
     
@@ -45,9 +45,9 @@ async def run_pipeline():
             if markdown and len(markdown) > 200: # Ensure it's not just a 'Cookie' page
                 header = f"--- SOURCE: {source_name} ---\n"
                 successful_crawls.append(header + markdown)
-                print(f"✅ Success from {source_name}")
+                print(f"Success from {source_name}")
             else:
-                print(f"⚠️ Failed or empty crawl for {source_name}. Skipping...")
+                print(f"Failed or empty crawl for {source_name}. Skipping...")
 
         if successful_crawls:
             # Combine all successful results with a separator
@@ -55,10 +55,10 @@ async def run_pipeline():
             db.update_job_description(db_id, final_content)
             print(f"🏁 Finished job {db_id} using {len(successful_crawls)} sources.")
         else:
-            print(f"❌ Could not crawl any links for job {db_id}.")
+            print(f"Could not crawl any links for job {db_id}.")
 
     db.close()
-    print("🚀 Pipeline Finished!")
+    print("Pipeline Finished!")
 
 if __name__ == "__main__":
     # We use asyncio.run because the crawler is async
