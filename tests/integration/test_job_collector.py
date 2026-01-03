@@ -14,7 +14,7 @@ def test_fetch_jobs_real_api():
     # We use a very specific query to limit results and save credits
     results = collector.fetch_jobs(
         role="Data Analyst", 
-        location="Austin, TX", 
+        location="Hyderabad, Telangana, India",
         max_pages=1
     )
     
