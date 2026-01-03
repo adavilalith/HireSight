@@ -1,0 +1,50 @@
+[project]
+name = "hiresight"
+version = "0.1.0"
+description = "A complete end-to-end job intelligence pipeline"
+readme = "README.md"
+authors = [
+    { name = "adavilalith", email = "adavilalith11@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "crawl4ai>=0.7.8",
+    "google-search-results>=2.4.2",
+    "groq>=1.0.0",
+    "motor>=3.7.1",
+    "psycopg2-binary>=2.9.11",
+    "pydantic-settings>=2.4.0",
+]
+
+[project.scripts]
+hiresight = "hiresight.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hiresight"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "pytest-dotenv>=0.5.2",
+    "ruff>=0.6.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+env_files = [".env"]
+addopts = "-ra -q"
+markers = [
+    "unit: fast isolated tests with mocks",
+    "integration: slower tests hitting real external services"
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src"]
