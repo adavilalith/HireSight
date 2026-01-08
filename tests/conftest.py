@@ -9,6 +9,6 @@ def db_client():
     yield client
 
     with client.conn.cursor() as cur:
-        cur.execute("TRUNCATE TABLE jobs_raw;")
+        cur.execute("TRUNCATE TABLE jobs_raw,jobs_parsed;")
         client.conn.commit()
     client.close()
