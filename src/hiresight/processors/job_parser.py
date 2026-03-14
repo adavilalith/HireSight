@@ -1,10 +1,15 @@
 import asyncio
+from os import sync
 from typing import Dict, Any
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from hiresight.processors.schemas import JobExtraction, CoreInfoSchema, SkillSetSchema
 
 class JobParser:
+    # 12,000 TPM limit / 2 (concurrent calls) = 6,000 tokens per call.
+    # 6,000 tokens * 3.5 characters (conservative) = ~21,000 characters.
+    # We'll set a safe buffer at 15,000 chars to account for prompt overhead.
+    MAX_CHARS = 30000
     def __init__(self,max_concurrent=2):
         # 70B for the logic-heavy core info
         self.bouncer = asyncio.Semaphore(max_concurrent)
@@ -57,47 +62,65 @@ class JobParser:
             <|eot_id|>
             <|start_header_id|>assistant<|end_header_id|>"""
         )
+    def _truncate_markdown(self, text: str, limit: int = MAX_CHARS) -> str:
+        """Simple cutoff to stay within Groq TPM limits."""
+        if len(text) > limit:
+            print(f"✂️ Truncating input from {len(text)} to {limit} chars.")
+            return text[:limit]
+        return text
 
     async def _extract_core(self, markdown: str) -> CoreInfoSchema:
-        # Switch method to json_mode to bypass Groq's strict tool validator
+        # Use truncated text
+        safe_markdown = self._truncate_markdown(markdown)
         chain = self.core_prompt | self.core_llm.with_structured_output(
             CoreInfoSchema, 
             method="json_mode" 
         )
-        return await chain.ainvoke({"markdown": markdown})
-
+        return await chain.ainvoke({"markdown": safe_markdown})
+    
     async def _extract_skills(self, markdown: str) -> SkillSetSchema:
-        # Same here for the 8B model
+        # Skills usually live in the first half of a JD anyway
+        # 8,000 chars is plenty for tech stack/responsibilities
+        safe_markdown = self._truncate_markdown(markdown, limit=8000)
         chain = self.skill_prompt | self.skill_llm.with_structured_output(
             SkillSetSchema, 
             method="json_mode"
         )
-        return await chain.ainvoke({"markdown": markdown[:6000]})
-
+        return await chain.ainvoke({"markdown": safe_markdown})
+    
     async def parse(self, markdown: str) -> JobExtraction:
-        async with self.bouncer:
-            results = await asyncio.gather(
-                self._extract_core(markdown),
-                self._extract_skills(markdown),
-                return_exceptions=True
-            )
-            
-            # Error handling logic to prevent one failure from killing the pipeline
-            core_res = results[0]
-            skill_res = results[1]
+        # 1. Extract Core Info
+        print("🚀 Starting Core Extraction...")
+        safe_markdown_core = self._truncate_markdown(markdown, self.MAX_CHARS)
+        core_chain = self.core_prompt | self.core_llm.with_structured_output(
+            CoreInfoSchema, 
+            method="json_mode" 
+        )
+        core_res = await core_chain.ainvoke({"markdown": safe_markdown_core})
 
-            if isinstance(core_res, Exception):
-                raise core_res # We need core info to proceed
+        # 2. Wait for 60 seconds to reset the Groq TPM bucket
+        print("💤 Sleeping for 60s to respect Rate Limits...")
+        await asyncio.sleep(60)
 
-            # Graceful degradation for skills
-            if isinstance(skill_res, Exception):
-                print(f"⚠️ Skill extraction failed: {skill_res}")
-                skill_dict = {"tech_stack": [], "soft_skills": [], "responsibilities": []}
-            else:
-                skill_dict = skill_res.model_dump()
+        # 3. Extract Skills
+        print("🚀 Starting Skill Extraction...")
+        # Even for skills, we can now afford a larger window
+        safe_markdown_skills = self._truncate_markdown(markdown, self.MAX_CHARS)
+        skill_chain = self.skill_prompt | self.skill_llm.with_structured_output(
+            SkillSetSchema, 
+            method="json_mode"
+        )
+        
+        try:
+            skill_res = await skill_chain.ainvoke({"markdown": safe_markdown_skills})
+            skill_dict = skill_res.model_dump()
+        except Exception as e:
+            print(f"⚠️ Skill extraction failed: {e}")
+            skill_dict = {"tech_stack": [], "soft_skills": [], "responsibilities": []}
 
-            merged = {**core_res.model_dump(), **skill_dict}
-            return JobExtraction.model_validate(merged)
+        # 4. Merge and Return
+        merged = {**core_res.model_dump(), **skill_dict}
+        return JobExtraction.model_validate(merged)
 # Usage in your loop:
 # parser = JobParser()
 # job_data = asyncio.run(parser.parse(raw_markdown))

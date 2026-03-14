@@ -1,53 +1,53 @@
-services:
-  # The Scraping App
-  hiresight-app:
-    build: .
-    env_file: .env
-    depends_on:
-      postgres-db:
-        condition: service_healthy
-      mongo-db:
-        condition: service_healthy
-    volumes:
-      - ./data:/app/data
+  services:
+  # BRONZE: Scraping (Needs Playwright)
+    bronze-pipeline:
+      build: .
+      command: ["uv", "run", "python", "src/hiresight/bronze_pipeline.py"]
+      env_file: .env
+      depends_on:
+        postgres-db:
+          condition: service_healthy
+      volumes:
+        - ./data:/app/data
 
-  # PostgreSQL for Raw Listings
-  postgres-db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: hiresight
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d hiresight"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+    # SILVER: Parsing (Needs LLM / Groq)
+    silver-pipeline:
+      build: .
+      # Overriding the CMD from the Dockerfile
+      command: ["uv", "run", "python", "src/hiresight/silver_pipeline.py"]
+      env_file: .env
+      depends_on:
+        postgres-db:
+          condition: service_healthy
+      volumes:
+        - ./data:/app/data
 
-  # PostgreSQL for Testing
-  postgres-test-db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
-      POSTGRES_DB: hiresight_test
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d hiresight_test"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+    # PostgreSQL for Raw Listings
+    postgres-db:
+      image: postgres:16
+      environment:
+        POSTGRES_USER: ${POSTGRES_USER:-admin}
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+        POSTGRES_DB: hiresight
+      ports:
+        - "5432:5432"
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U admin -d hiresight"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
 
-  # MongoDB for Enriched Data
-  mongo-db:
-    image: mongo:latest
-    ports:
-      - "27017:27017"
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      # # PostgreSQL for Testing
+      # postgres-test-db:
+      #   image: postgres:16
+      #   environment:
+      #     POSTGRES_USER: ${POSTGRES_USER:-admin}
+      #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      #     POSTGRES_DB: hiresight_test
+      #   ports:
+      #     - "5433:5432"
+      #   healthcheck:
+      #     test: ["CMD-SHELL", "pg_isready -U admin -d hiresight_test"]
+      #     interval: 5s
+      #     timeout: 5s
+      #     retries: 5
