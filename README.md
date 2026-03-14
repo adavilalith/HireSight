@@ -112,6 +112,6 @@ uv run pytest tests/integration
 
 ### License
 
-This project is open-source and available under the MIT License. (see [LICENSE](https://github.com/adavilalith/HireSight/LICENSE)).
+This project is open-source and available under the MIT License. (see [LICENSE](https://github.com/adavilalith/HireSight/blob/main/LICENSE)).
 
 ---
