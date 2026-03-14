@@ -1,0 +1,29 @@
+name: Bronze Pipeline
+on:
+  schedule:
+    - cron: '0 0 1,15 * *'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true # Automatically caches your packages
+
+      - name: Sync Environment
+        # --frozen ensures we don't update the lockfile in CI
+        run: uv sync --frozen
+
+      - name: Install Playwright
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run Pipeline
+        env:
+          POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+        run: uv run python src/hiresight/bronze_pipeline.py
