@@ -1,82 +1,117 @@
-# HireSight: Job Market Intelligence Pipeline 🚀
-
-HireSight is an automated data engine that transforms unstructured job postings into high-fidelity, structured datasets. Built for scale, it uses a **tiered LLM extraction** strategy and **asynchronous processing** to handle bulk data without hitting rate limits.
-
-## 🛠 current Status: Local Stage
-
-Currently, the core engine is operational in a local environment. The next phase involves migrating orchestration to **GitHub Actions** and storage to **Neon (Serverless Postgres)** for 24/7 background processing.
-
-* [x] Discovery Layer (SerpApi): Automated lead generation using google_jobs engine.
-* [x] Deep Crawling (Crawl4AI): High-speed, AI-ready markdown extraction with automated HTML cleaning.
-* [x] Pydantic V2 Schemas with Type Coercion (LPA to Int, Boolean logic)
-* [x] Asynchronous Multi-LLM Parser (Llama 3.3 70B + 3.1 8B)
-* [x] Asyncio Semaphore for Rate Limit Control
-* [x] Local PostgreSQL Integration
-* [ ] GitHub Actions Staggered Cron Jobs
-* [ ] Neon Cloud DB Migration
-* [ ] Multi-API Key Rotation Logic
-
-## 🏗️ Technical Architecture
-
-* **Orchestration:** `asyncio` for concurrent LLM processing.
-* **Intelligence:** * **Core Extraction:** Llama 3.3 70B (Logic & Salary standardization).
-* **Skill Extraction:** Llama 3.1 8B (High-speed list generation).
 
 
-* **Data Integrity:** Pydantic `BeforeValidator` layers to clean "messy" LLM strings into strict Python/SQL types.
-* **Package Management:** `uv` (Extremely fast Python dependency resolver).
+# HireSight: Job Market Intelligence Pipeline 
 
-## 🚀 Setup (Local)
+HireSight is an automated data engine that transforms unstructured job postings into high-fidelity, structured datasets. Built for scale, it uses a **Bronze-Silver Medallion Architecture**, **tiered LLM extraction**, and **transaction-safe concurrency** to handle bulk job market analysis without hitting rate limits.
 
-### Prerequisites
+## Technical Architecture
 
-* [uv](https://github.com/astral-sh/uv) installed.
-* Local PostgreSQL instance.
-* Groq API Key.
+HireSight operates as a two-stage asynchronous pipeline:
 
-### Installation
+### 1. The Bronze Pipeline (Ingestion)
 
-1. **Clone the repo:**
+* **Discovery:** Uses SerpApi to find job leads based on a dynamic `jobs_config.json`.
+* **Deduplication:** Uses an `external_id` (SerpApi Job ID) with `ON CONFLICT DO NOTHING` to ensure a clean source of truth.
+* **Deep Crawl:** Utilizes **Crawl4AI** to convert job URLs into clean, AI-ready Markdown.
+
+### 2. The Silver Pipeline (Structured Extraction)
+
+* **Concurrency:** Implements `FOR UPDATE SKIP LOCKED` transactions, allowing multiple workers to process jobs simultaneously without collisions.
+* **Tiered Intelligence:**
+* **Llama 3.3 70B:** Handles complex reasoning, salary extraction, and currency standardization.
+* **Llama 3.1 8B:** Optimized for high-speed, token-efficient extraction of tech stacks and responsibilities.
+
+
+* **Data Integrity:** Pydantic V2 validation ensures LLM outputs are coerced into strict Python/SQL types.
+
+---
+
+## Orchestration & Automation
+
+HireSight is designed to be "set and forget." You can automate the pipelines using two primary methods:
+
+### Option A: GitHub Actions (Cloud Native)
+
+Perfect for 24/7 background processing on public repositories.
+
+* **Bronze:** Runs every 15 days to fetch fresh leads.
+* **Silver:** Runs every 7 days, processing the queue in a 6-hour "slow-burn" to respect API rate limits.
+* **Note:** Requires a hosted database (e.g., Neon.tech).
+
+### Option B: Local Crontab (Self-Hosted)
+
+Ideal for running on a local server or laptop.
+
+```bash
+# 1. Run Bronze Pipeline every 1st and 15th at 2:00 AM
+0 2 1,15 * * cd /path/to/project && docker compose run --rm bronze-pipeline
+
+# 2. Run Silver Pipeline every Sunday at 3:00 AM
+0 3 * * 0 cd /path/to/project && docker compose run --rm silver-pipeline
+
+```
+
+---
+
+## 🛠 Setup Instructions
+
+### 1. Prerequisites
+
+* [uv](https://github.com/astral-sh/uv) (The only Python tool you'll need).
+* Docker & Docker Compose.
+* API Keys: Groq (LLM) and SerpApi (Scraping).
+
+### 2. Installation
+
 ```bash
 git clone https://github.com/yourusername/hiresight.git
 cd hiresight
 
-```
-
-
-2. **Sync environment with uv:**
-```bash
-uv sync
+# Sync dependencies exactly to the frozen lockfile
+uv sync --frozen
 
 ```
 
+### 3. Environment Configuration
 
-3. **Environment Variables:**
-Create a `.env` file:
+Create a `.env` file in the root directory:
+
 ```env
-POSTGRES_URL="postgresql://user:pass@localhost:5432/hiresight"
-GROQ_API_KEY="your_key_here"
+# Database
+POSTGRES_URL="postgresql://admin:password@localhost:5432/hiresight"
+
+# API Keys
+GROQ_API_KEY="gsk_..."
+SERPAPI_KEY="..."
 
 ```
 
-
-
-## 🧪 Running Tests
-
-The project utilizes `pytest` with `pytest-asyncio` for testing asynchronous logic.
+### 4. Local Deployment
 
 ```bash
-# Run unit tests (Schemas & Parsers)
-uv run pytest tests/unit
+# Spin up the database and services
+docker compose up -d
 
-# Run integration tests (Database)
+```
+
+---
+
+## Development & Testing
+
+We use `pytest` with `pytest-asyncio` for ensuring logic remains robust during schema changes.
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run specific integration tests
 uv run pytest tests/integration
 
 ```
+---
 
-## 🛤️ Roadmap
+### License
 
-1. **Cloud Migration:** Move local PG to **Neon** for serverless scaling.
-2. **GitHub Actions:** Implement `.github/workflows/process.yml` to run hourly batch processing.
-3. **Key Rotation:** Add logic to cycle through multiple `GROQ_KEYS` to maximize throughput.
-4. **Local Inference:** Add **Ollama** fallback support for Llama 3.3 70B.
+This project is open-source and available under the MIT License. (see [LICENSE](https://github.com/adavilalith/HIreSight/LICENSE)).
+
+---
