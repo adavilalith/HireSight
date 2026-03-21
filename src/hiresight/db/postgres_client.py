@@ -138,8 +138,7 @@ class PostgresClient:
                 WHERE crawled = TRUE 
                 AND processing_status = 'pending'
                 ORDER BY created_at ASC
-                LIMIT 1
-                FOR UPDATE SKIP LOCKED;
+                LIMIT 1;
             """
             cur.execute(query)
             row = cur.fetchone()
